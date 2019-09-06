@@ -25,8 +25,8 @@ def run(host, port, image, model, signature_name):
     # Call classification model to make prediction on the image
     request = predict_pb2.PredictRequest()
     request.model_spec.name = model
-    # request.model_spec.signature_name = signature_name
-    request.inputs['image'].CopyFrom(make_tensor_proto(data, shape=[1, 28, 28, 1]))
+    request.model_spec.signature_name = signature_name
+    request.inputs['input_image'].CopyFrom(make_tensor_proto(data, shape=[1, 28, 28, 1]))
     # request.inputs['image'].CopyFrom(make_tensor_proto(data))
 
     result = stub.Predict(request, 10.0)
@@ -48,7 +48,7 @@ if __name__ == '__main__':
     parser.add_argument('--image', help='input image', default='/Users/wind/Desktop/1.png', type=str)
     parser.add_argument('--model', help='model name', default='mnist', type=str)
     parser.add_argument('--signature_name', help='Signature name of saved TF model',
-                        default='...', type=str)
+                        default='serving_default', type=str)
 
     args = parser.parse_args()
     run(args.host, args.port, args.image, args.model, args.signature_name)

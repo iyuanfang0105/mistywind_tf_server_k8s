@@ -1,94 +1,139 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-import numpy as np
 import tensorflow as tf
+from tensorflow import keras
 
-tf.logging.set_verbosity(tf.logging.INFO)
-
-tf.app.flags.DEFINE_integer('steps', 10000, 'The number of steps to train a model')
-tf.app.flags.DEFINE_string('model_dir', './models/ckpt/', 'Dir to save a model and checkpoints')
-tf.app.flags.DEFINE_string('saved_dir', './models/pb/', 'Dir to save a model for TF serving')
-FLAGS = tf.app.flags.FLAGS
-
-INPUT_FEATURE = 'image'
-NUM_CLASSES = 10
+# Helper libraries
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+import gzip
+import subprocess
 
 
-def serving_input_receiver_fn():
+print(tf.__version__)
+
+
+def load_fashion_mnist_data(data_dir):
+    """Loads the Fashion-MNIST dataset.
+
+    Returns:
+        Tuple of Numpy arrays: `(x_train, y_train), (x_test, y_test)`.
+
+    License:
+        The copyright for Fashion-MNIST is held by Zalando SE.
+        Fashion-MNIST is licensed under the [MIT license](
+        https://github.com/zalandoresearch/fashion-mnist/blob/master/LICENSE).
+
     """
-    This is used to define inputs to serve the model.
-    :return: ServingInputReciever
-    """
-    reciever_tensors = {
-        # The size of input image is flexible.
-        INPUT_FEATURE: tf.placeholder(tf.float32, [None, None, None, 1]),
-    }
+    base = 'https://storage.googleapis.com/tensorflow/tf-keras-datasets/'
+    files = [
+        'train-labels-idx1-ubyte.gz', 'train-images-idx3-ubyte.gz',
+        't10k-labels-idx1-ubyte.gz', 't10k-images-idx3-ubyte.gz'
+    ]
 
-    # Convert give inputs to adjust to the model.
-    features = {
-        # Resize given images.
-        INPUT_FEATURE: tf.image.resize_images(reciever_tensors[INPUT_FEATURE], [28, 28]),
-    }
-    return tf.estimator.export.ServingInputReceiver(receiver_tensors=reciever_tensors,
-                                                    features=features)
+    data_url = []
+    data_path = []
 
+    for fname in files:
+        data_url.append(os.path.join(base, fname))
+        data_path.append(os.path.join(data_dir, fname))
+    print('data url: {}'.format(data_url))
+    print('data path: {}'.format(data_path))
 
-def main(_):
-    # Load training and eval data
-    mnist = tf.contrib.learn.datasets.load_dataset("mnist")
-    train_data = mnist.train.images  # Returns np.array
-    train_labels = np.asarray(mnist.train.labels, dtype=np.int32)
-    eval_data = mnist.test.images  # Returns np.array
-    eval_labels = np.asarray(mnist.test.labels, dtype=np.int32)
+    with gzip.open(data_path[0], 'rb') as lbpath:
+        y_train = np.frombuffer(lbpath.read(), np.uint8, offset=8)
 
-    # reshape images
-    # To have input as an image, we reshape images beforehand.
-    train_data = train_data.reshape(train_data.shape[0], 28, 28, 1)
-    eval_data = eval_data.reshape(eval_data.shape[0], 28, 28, 1)
+    with gzip.open(data_path[1], 'rb') as imgpath:
+        x_train = np.frombuffer(
+            imgpath.read(), np.uint8, offset=16).reshape(len(y_train), 28, 28)
 
-    # feature columns
-    feature_columns = [tf.feature_column.numeric_column(INPUT_FEATURE, shape=[28, 28, 1])]
+    with gzip.open(data_path[2], 'rb') as lbpath:
+        y_test = np.frombuffer(lbpath.read(), np.uint8, offset=8)
 
-    # Create the Estimator
-    training_config = tf.estimator.RunConfig(
-        model_dir=FLAGS.model_dir,
-        save_summary_steps=100,
-        save_checkpoints_steps=100)
-    classifier = tf.estimator.DNNClassifier(
-        config=training_config,
-        feature_columns=feature_columns,
-        hidden_units=[256, 32],
-        optimizer=tf.train.AdamOptimizer(1e-4),
-        n_classes=NUM_CLASSES,
-        dropout=0.1,
-        model_dir=FLAGS.model_dir
-    )
+    with gzip.open(data_path[3], 'rb') as imgpath:
+        x_test = np.frombuffer(
+            imgpath.read(), np.uint8, offset=16).reshape(len(y_test), 28, 28)
 
-    # Train the model
-    train_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={INPUT_FEATURE: train_data},
-        y=train_labels,
-        batch_size=100,
-        num_epochs=None,
-        shuffle=True)
-
-    classifier.train(input_fn=train_input_fn, steps=FLAGS.steps)
-
-    # Evaluate the model and print results
-    eval_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={INPUT_FEATURE: eval_data},
-        y=eval_labels,
-        num_epochs=1,
-        shuffle=False)
-    eval_results = classifier.evaluate(input_fn=eval_input_fn)
-    print(eval_results)
-
-    # Save the model
-    classifier.export_savedmodel(FLAGS.saved_dir,
-                                 serving_input_receiver_fn=serving_input_receiver_fn)
+    return x_train, y_train, x_test, y_test
 
 
-if __name__ == "__main__":
-    tf.app.run()
+def load_data(data_dir, plot=False):
+    train_images, train_labels, test_images, test_labels = load_fashion_mnist_data(data_dir)
+
+    class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
+                   'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
+
+    # show info of data
+    print('x_train: ', train_images.shape)
+    print('y_train: ', train_labels.shape)
+    print('x_test: ', test_images.shape)
+    print('y_test: ', test_labels.shape)
+    print('class names: ', class_names)
+
+    if plot:
+        # show an example of image
+        plt.figure()
+        plt.imshow(train_images[0])
+        plt.colorbar()
+        plt.grid(False)
+        plt.show()
+
+    # normalization, scale the values to a range of 0 to 1
+    train_images = train_images / 255.0
+    test_images = test_images / 255.0
+
+    if plot:
+        plt.figure(figsize=(10, 10))
+        for i in range(25):
+            plt.subplot(5, 5, i + 1)
+            plt.xticks([])
+            plt.yticks([])
+            plt.grid(False)
+            plt.imshow(train_images[i], cmap=plt.cm.binary)
+            plt.xlabel(class_names[train_labels[i]])
+        plt.show()
+
+    return np.reshape(train_images, (-1, 28, 28, 1)), train_labels, np.reshape(test_images, (-1, 28, 28, 1)), test_labels, class_names
+
+
+def build_model():
+    model = keras.Sequential([
+        keras.layers.Conv2D(input_shape=(28, 28, 1), filters=8, kernel_size=3,
+                            strides=2, activation='relu', name='Conv1'),
+        keras.layers.Flatten(),
+        keras.layers.Dense(10, activation=tf.nn.softmax, name='Softmax')
+    ])
+    print(model.summary())
+    return model
+
+
+def train(model, X_train, y_train, X_test, y_test, epochs=5):
+    model.compile(optimizer=tf.train.AdamOptimizer(),
+                  loss='sparse_categorical_crossentropy',
+                  metrics=['accuracy'])
+    model.fit(X_train, y_train, epochs=epochs)
+    test_loss, test_acc = model.evaluate(X_test, y_test)
+    print('\nTest accuracy: {}'.format(test_acc))
+    return model
+
+
+def model_save(save_path, version='v_0'):
+    # if os.path.isdir(save_path):
+    #     print('\nAlready saved a model, cleaning up\n')
+    save_path = os.path.join(save_path, version)
+
+    tf.saved_model.simple_save(
+        keras.backend.get_session(),
+        save_path,
+        inputs={'input_image': model.input},
+        outputs={t.name: t for t in model.outputs})
+
+    print('\nSaved model:', save_path)
+
+
+
+if __name__ == '__main__':
+    train_images, train_labels, test_images, test_labels, class_names = load_data('../dataset/', plot=False)
+    model = build_model()
+    model = train(model, train_images, train_labels, test_images, test_labels, epochs=2)
+    model_save('model/pb', version='v_0')
+

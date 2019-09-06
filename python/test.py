@@ -39,6 +39,7 @@ def input_fn(train_data, train_labels, eval_data, eval_labels):
         shuffle=False)
     return train_input_fn, eval_input_fn
 
+
 def build_model(feature_columns, model_dir):
     # Create the Estimator
     training_config = tf.estimator.RunConfig(
